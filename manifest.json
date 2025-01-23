@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Safe Tag Auto Sync",
+  "version": "1.0",
+  "description": "Captures form data from HikCentral and sends it to Sentinel.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://192.168.0.159:3000/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://192.168.0.159:3000/*"],
+      "js": ["content.js"]
+    }
+  ]
+} 
