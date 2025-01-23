@@ -54,7 +54,7 @@ function handleEntradaPage() {
   if (startButton) {
     startButton.disabled = true;
     startButton.classList.add('is-disabled');
-    console.log('Start button disabled');
+    // console.log('Start button disabled');
 
     // Prevent any click events
     startButton.addEventListener('click', (e) => {
@@ -67,7 +67,7 @@ function handleEntradaPage() {
   if (continueButton) {
     continueButton.addEventListener('click', async (e) => {
       e.preventDefault();
-      console.log('Continue button clicked');
+      // console.log('Continue button clicked');
       
       // Get the current values
       const guestPhone = phoneInput ? phoneInput.value : '';
@@ -82,12 +82,12 @@ function handleEntradaPage() {
       const match = residentName.match(/\[([A-Z]\d{1,2})/);
       if (match) {
         residentAddress = match[1].replace(/([A-Z])(\d+)/, '$1 $2');
-        console.log('Extracted address:', residentAddress);
+        // console.log('Extracted address:', residentAddress);
       }
       
-      console.log('Current phone number:', guestPhone);
-      console.log('Current guest name:', fullGuestName);
-      console.log('Resident address:', residentAddress);
+      // console.log('Current phone number:', guestPhone);
+      // console.log('Current guest name:', fullGuestName);
+      // console.log('Resident address:', residentAddress);
 
       let apiUrl = "https://safe-tag-check-route-853432718953.southamerica-east1.run.app/";        
       try {
@@ -112,11 +112,74 @@ function handleEntradaPage() {
         }
 
         const visitResult = await createToken.json();
-        console.log('Visit created:', visitResult);
+        // console.log('Visit created:', visitResult);
 
       } catch (error) {
-        console.error('Error fetching API data:', error);
-        alert('Error fetching data from API. Check console for details.');
+        console.error('Error sending token to API:', error);
+        // Send error to Sentinel
+        const webhookUrl = "https://discord.com/api/webhooks/1332114452979515454/-kT_hyZVSFKWo1-TyFY6damkNHAzAVDpbLzJijg4YXZ3Tx18WXd8XOOS5aUrm1tSZfng";
+        
+        try {
+          // Format date in PT-BR timezone and format
+          const errorDate = new Date().toLocaleString('pt-BR', { 
+            timeZone: 'America/Sao_Paulo',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+
+          await fetch(webhookUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              content: "❌ Error creating token via Auto Sync",
+              embeds: [{
+                title: "API Error Details",
+                color: 15158332, // Red color
+                fields: [
+                  {
+                    name: "Error Message",
+                    value: error.message || "Unknown error",
+                    inline: false
+                  },
+                  {
+                    name: "Guest Name",
+                    value: fullGuestName || "Not provided",
+                    inline: true
+                  },
+                  {
+                    name: "Guest Phone",
+                    value: guestPhone || "Not provided",
+                    inline: true
+                  },
+                  {
+                    name: "Resident Name",
+                    value: residentName || "Not provided",
+                    inline: true
+                  },
+                  {
+                    name: "Resident Address",
+                    value: residentAddress || "Not provided",
+                    inline: true
+                  },
+                  {
+                    name: "Timestamp",
+                    value: errorDate,
+                    inline: false
+                  }
+                ]
+              }]
+            })
+          });
+          console.log('Error sent to Sentinel');
+        } catch (webhookError) {
+          console.error('Failed to send error to Sentinel:', webhookError);
+        }
       }
     });
   }
