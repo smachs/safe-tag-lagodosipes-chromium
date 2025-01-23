@@ -50,6 +50,20 @@ function handleEntradaPage() {
   const continueButton = document.querySelector('button[title="Entrar e continuar"][data-v-eb02dcfc]');
   const startButton = document.querySelector('button[title="Entrada"][data-v-eb02dcfc]');
 
+  // Disable the startButton if found
+  if (startButton) {
+    startButton.disabled = true;
+    startButton.classList.add('is-disabled');
+    console.log('Start button disabled');
+
+    // Prevent any click events
+    startButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }, true); // Using capture phase to ensure we catch the event first
+  }
+
   if (continueButton) {
     continueButton.addEventListener('click', async (e) => {
       e.preventDefault();
@@ -62,61 +76,6 @@ function handleEntradaPage() {
       const residentName = visitedInput ? visitedInput.value : '';
       
       // Combine name and surname if surname exists
-      const fullGuestName = surname ? `${guestName} ${surname}` : guestName;
-      
-      let residentAddress = "Rua das Flores, 123"; // default value
-      const match = residentName.match(/\[([A-Z]\d{1,2})/);
-      if (match) {
-        residentAddress = match[1].replace(/([A-Z])(\d+)/, '$1 $2');
-        console.log('Extracted address:', residentAddress);
-      }
-      
-      console.log('Current phone number:', guestPhone);
-      console.log('Current guest name:', fullGuestName);
-      console.log('Resident address:', residentAddress);
-
-      let apiUrl = "https://safe-tag-check-route-853432718953.southamerica-east1.run.app/";        
-      try {
-        const createToken = await fetch(apiUrl + 'create-token', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            guest_display_name: fullGuestName,
-            guest_phone_number: guestPhone,
-            resident_display_name: residentName,
-            resident_address: residentAddress,
-            owner_id: "DMPqzoBw8ZnvvRTzLnK1",
-            description: "Rastreador criado via Auto Sync.",
-            deviceId: "zhJBQCUTzofhbH0lcEdCTBRY0BL2"
-          })
-        });
-
-        if (!createToken.ok) {
-          throw new Error(`HTTP error! status: ${createToken.status}`);
-        }
-
-        const visitResult = await createToken.json();
-        console.log('Visit created:', visitResult);
-
-      } catch (error) {
-        console.error('Error fetching API data:', error);
-        alert('Error fetching data from API. Check console for details.');
-      }
-    });
-  }
-
-  if (startButton) {
-    startButton.addEventListener('click', async (e) => {
-      e.preventDefault();
-      console.log('Start button clicked');
-      
-      const guestPhone = phoneInput ? phoneInput.value : '';
-      const guestName = givenNameInput ? givenNameInput.value : ''; 
-      const surname = givenSurnameInput ? givenSurnameInput.value.trim() : '';
-      const residentName = visitedInput ? visitedInput.value : '';
-      
       const fullGuestName = surname ? `${guestName} ${surname}` : guestName;
       
       let residentAddress = "Rua das Flores, 123"; // default value
