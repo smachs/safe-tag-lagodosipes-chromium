@@ -47,10 +47,11 @@ async function sendToDiscord(content, title, description, fields, color) {
 // Set up a lighter MutationObserver just to wait for "Entrada" to appear
 const observer = new MutationObserver(() => {
   const entradaSpan = document.querySelector('span[data-v-27ffe136][title="Entrada"]');
+  console.log('entradaSpan:', entradaSpan);
 
-  if (entradaSpan && !isHandled) {
+  if (entradaSpan) {
     isHandled = true; // Set flag to prevent multiple handling
-    observer.disconnect(); // Stop observing once we find it
+    // observer.disconnect(); // Stop observing once we find it
     console.log('Found page - initializing auto sync handlers');
     handleEntradaPage();
   }
@@ -72,33 +73,19 @@ function handleEntradaPage() {
   // Watch for the Visitado (Visited) input with more specific selector
   const visitedInput = document.querySelector('div[data-v-de849942][data-v-e10c82a2].search-person-panel input.el-input__inner[placeholder="Pesquisar"]');
 
-  // More specific selector for phone number input
-  const phoneInput = document.querySelector('input[tips*="São permitidos de 1 a 32 caracteres, incluindo dígitos"]') ||
-    document.querySelector('.el-form-item input[maxlength="32"]');
+  // Find phone input by using emails class as reference
+  const emailsDiv = document.querySelector('div[data-v-e10c82a2].el-form-item.emails');
+  let phoneInput = null;
+
+  if (emailsDiv && emailsDiv.nextElementSibling) {
+    phoneInput = emailsDiv.nextElementSibling.querySelector('input.el-input__inner');
+  }
 
   // Look for both "Entrar e continuar" and "Entrar" buttons
-  const continueButton = document.querySelector('button[title="Entrar e continuar"][data-v-eb02dcfc]');
+  const continueButton = document.querySelector('button[title="Dar entrada e continuar"][data-v-eb02dcfc]');
   const startButton = document.querySelector('button[title="Entrada"][data-v-eb02dcfc]');
-
-  // Send connection status message
-  try {
-    sendToDiscord(
-      "📡 Auto Sync Connected Successfully",
-      "Connection Status Check",
-      "Successfully established connection with HikCentral",
-      [
-        { name: "Status", value: "✅ Connected", inline: true },
-        { name: "Form Elements", value: "✅ All Required Fields Found", inline: true },
-        { name: "Page Check", value: "✅ On Entrada Page", inline: true },
-        { name: "DOM Ready", value: document.readyState, inline: true },
-        { name: "Version", value: "v1.0.0", inline: true },
-      ],
-      5763719 // Green color for success
-    );
-    console.log('Connection success status sent to Sentinel');
-  } catch (webhookError) {
-    console.error('Failed to send connection success status to Sentinel:', webhookError);
-  }
+  console.log('continueButton:', continueButton);
+  console.log('startButton:', startButton);
 
   // Disable the startButton if found
   if (startButton) {
@@ -118,10 +105,9 @@ function handleEntradaPage() {
   if (continueButton) {
     continueButton.addEventListener('click', async (e) => {
       e.preventDefault();
-      //console.log('Continue button clicked');
 
       // Get the current values
-      const guestPhone = phoneInput ? phoneInput.value.trim() : '';
+      const guestPhone = phoneInput ? phoneInput.value : '';
       const guestName = givenNameInput ? givenNameInput.value : '';
       const surname = givenSurnameInput ? givenSurnameInput.value.trim() : '';
       const residentName = visitedInput ? visitedInput.value : '';
@@ -183,6 +169,11 @@ function handleEntradaPage() {
         residentAddress = match[1].replace(/([A-Z])(\d+)/, '$1 $2');
         // console.log('Extracted address:', residentAddress);
       }
+      console.log('residentAddress:', residentAddress);
+      if (residentAddress === '') {
+        // alert('❌ Por favor, preencha o endereço do morador!');
+        return;
+      }
 
       // console.log('Current phone number:', guestPhone);
       // console.log('Current guest name:', fullGuestName);
@@ -208,103 +199,84 @@ function handleEntradaPage() {
         const visitResult = await createToken.json();
         console.log('Visit created:', visitResult);
 
-        // Send success message to Discord
-        await sendToDiscord(
-          "✅ Token Created Successfully via Auto Sync",
-          "New Token Details",
-          "A new token was successfully created",
-          [
-            { name: "Guest Name", value: fullGuestName || "Not provided", inline: true },
-            { name: "Guest Phone", value: guestPhone || "Not provided", inline: true },
-            { name: "Resident Name", value: residentName || "Not provided", inline: true },
-            { name: "Resident Address", value: residentAddress || "Not provided", inline: true },
-            { name: "Token ID", value: visitResult.tokenId || "Not available", inline: true }
-          ],
-          5763719 // Green color for success
-        );
-
-        // Show success confirmation
-        const confirmed = confirm('✅ Rastreador criado com sucesso! Clique em OK para atualizar a página.');
-
-        if (confirmed) {
-          // console.log('Refreshing page in 1 second...');
-          // Refresh page after 1 second
-          setTimeout(() => {
-            window.location.reload();
-          }, 1000);
-        } else {
-          try {
-            await sendToDiscord(
-              "ℹ️ User Action: Refresh Cancelled",
-              "Token Created - Page Not Refreshed",
-              "Token was created successfully but user chose not to refresh the page",
-              [
-                { name: "Guest Name", value: fullGuestName || "Not provided", inline: true },
-                { name: "Guest Phone", value: guestPhone || "Not provided", inline: true },
-                { name: "Resident Name", value: residentName || "Not provided", inline: true },
-                { name: "Resident Address", value: residentAddress || "Not provided", inline: true },
-                { name: "Token ID", value: visitResult.tokenId || "Not available", inline: true }
-              ],
-              3447003 // Blue color for info
-            );
-          } catch (webhookError) {
-            console.error('Failed to send cancel action to Sentinel:', webhookError);
+        if (createToken.ok) {
+          // Clear phone input value on success
+          if (phoneInput) {
+            phoneInput.value = '';
+            console.log('Phone input cleared');
           }
-        }
-      } catch (error) {
-        console.error('Error sending token to API:', error);
 
-        // Send error to Sentinel
-        try {
+          // Success webhook and confirmation
+          alert('✅ Token created successfully! Click OK to refresh the page.');
+
           await sendToDiscord(
-            "❌ Error creating token via Auto Sync",
-            "API Error Details",
-            error.message || "Unknown error",
+            "✅ Token Created Successfully via Auto Sync",
+            "New Token Details",
+            "A new token was successfully created",
             [
-              { name: "Error Message", value: error.message || "Unknown error", inline: false },
-              {
-                name: "Request Data", value: "```json\n" + JSON.stringify({
-                  guest_display_name: fullGuestName,
-                  guest_phone_number: guestPhone,
-                  resident_display_name: residentName,
-                  resident_address: residentAddress
-                }, null, 2) + "\n```",
-                inline: false
-              },
               { name: "Guest Name", value: fullGuestName || "Not provided", inline: true },
               { name: "Guest Phone", value: guestPhone || "Not provided", inline: true },
               { name: "Resident Name", value: residentName || "Not provided", inline: true },
-              { name: "Resident Address", value: residentAddress || "Not provided", inline: true }
+              { name: "Resident Address", value: residentAddress || "Not provided", inline: true },
+              { name: "Token ID", value: visitResult.tokenId || "Not available", inline: true }
             ],
-            15158332 // Red color
+            5763719 // Green color for success
           );
-        } catch (webhookError) {
-          console.error('Failed to send error to Sentinel:', webhookError);
+        } else {
+          throw new Error(`HTTP error! status: ${createToken.status}`);
         }
+      } catch (error) {
+        console.error('Error sending token to API:', error);
+        // Error webhook
+        await sendToDiscord(
+          "❌ Error creating token via Auto Sync",
+          "API Error Details",
+          error.message || "Unknown error",
+          [
+            { name: "Error Message", value: error.message || "Unknown error", inline: false },
+            {
+              name: "Request Data", value: "```json\n" + JSON.stringify({
+                guest_display_name: fullGuestName,
+                guest_phone_number: guestPhone,
+                resident_display_name: residentName,
+                resident_address: residentAddress
+              }, null, 2) + "\n```",
+              inline: false
+            },
+            { name: "Guest Name", value: fullGuestName || "Not provided", inline: true },
+            { name: "Guest Phone", value: guestPhone || "Not provided", inline: true },
+            { name: "Resident Name", value: residentName || "Not provided", inline: true },
+            { name: "Resident Address", value: residentAddress || "Not provided", inline: true }
+          ],
+          15158332 // Red color
+        );
       }
     });
   } else {
-    try {
-      sendToDiscord(
-        "🔌 Auto Sync Connection Alert",
-        "Connection Status Check",
-        "Unable to establish connection with the HikCentral",
-        [
-          { name: "Status", value: "❌ Button Not Found", inline: true },
-          { name: "Element Selector", value: "`button[title='Dar entrada e continuar'][data-v-eb02dcfc]`", inline: true },
-          { name: "Page Check", value: document.querySelector('span[data-v-27ffe136][title="Entrada"]') ? "✅ On Entrada Page" : "❌ Not on Entrada Page", inline: true },
-          { name: "DOM Ready", value: document.readyState, inline: true },
-          { name: "Version", value: "v1.0.0", inline: true },
-        ],
-        3447003 // Blue color for info
-      );
-      console.log('Connection status sent to Sentinel');
+    // try {
+    //   console.log('Observer reconnected after connection failure');
+    //   if (entradaSpan && !isHandled) {
+    //     sendToDiscord(
+    //       "🔌 Auto Sync Connection Alert",
+    //       "Connection Status Check",
+    //       "Unable to establish connection with the HikCentral",
+    //       [
+    //         { name: "Status", value: "❌ Button Not Found", inline: true },
+    //         { name: "Element Selector", value: "`button[title='Dar entrada e continuar'][data-v-eb02dcfc]`", inline: true },
+    //         { name: "Page Check", value: document.querySelector('span[data-v-27ffe136][title="Entrada"]') ? "✅ On Entrada Page" : "❌ Not on Entrada Page", inline: true },
+    //         { name: "DOM Ready", value: document.readyState, inline: true },
+    //         { name: "Version", value: "v1.0.0", inline: true },
+    //       ],
+    //       3447003 // Blue color for info
+    //     );
+    //     console.log('Connection status sent to Sentinel');
 
-      // Show alert to user
-      alert('❌ Por favor, atualize a página!');
-    } catch (webhookError) {
-      console.error('Failed to send connection status to Sentinel:', webhookError);
-    }
+    //     // Show alert to user
+    //     alert('❌ Por favor, atualize a página!');
+    //   }
+    // } catch (webhookError) {
+    //   console.error('Failed to send connection status to Sentinel:', webhookError);
+    // }
   }
 }
 
@@ -320,10 +292,10 @@ bigText.style.margin = '0';
 
 // Make sure body exists before inserting
 if (document.body) {
-  //document.body.insertBefore(bigText, document.body.firstChild);
+  document.body.insertBefore(bigText, document.body.firstChild);
+  // handleEntradaPage();
+  console.log('Body found - initializing auto sync handlers');
 } else {
-  //console.log('Body not found - waiting for DOM content loaded');
-  document.addEventListener('DOMContentLoaded', () => {
-    // document.body.insertBefore(bigText, document.body.firstChild);
-  });
+  console.log('Body not found - waiting for DOM content loaded');
+  // document.addEventListener('DOMContentLoaded', handleEntradaPage);
 }
