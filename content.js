@@ -1,4 +1,15 @@
-let isHandled = false; // Flag to ensure we only handle the page once
+// Constants and globals at the top
+let checkTimer = null;
+let isProcessing = false;
+
+let elements = {
+  givenNameInput: null,
+  givenSurnameInput: null,
+  visitedInput: null,
+  phoneInput: null,
+  continueButton: null,
+  startButton: null
+};
 
 // Constants at the top for reuse
 const WEBHOOK_URL = "https://discord.com/api/webhooks/1332114452979515454/-kT_hyZVSFKWo1-TyFY6damkNHAzAVDpbLzJijg4YXZ3Tx18WXd8XOOS5aUrm1tSZfng";
@@ -25,6 +36,8 @@ async function sendToDiscord(content, title, description, fields, color) {
       inline: false
     });
 
+    console.log('Sending Discord webhook:', { content, title, description, fields });
+
     await fetch(WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -38,148 +51,118 @@ async function sendToDiscord(content, title, description, fields, color) {
         }]
       })
     });
-    console.log('Message sent to Sentinel:', title);
+    console.log('Discord webhook sent successfully');
   } catch (error) {
-    console.error('Failed to send to Sentinel:', error);
+    console.error('Failed to send to Discord:', error);
   }
 }
 
-// Set up a lighter MutationObserver just to wait for "Entrada" to appear
-const observer = new MutationObserver(() => {
-  const entradaSpan = document.querySelector('span[data-v-27ffe136][title="Entrada"]');
-  console.log('entradaSpan:', entradaSpan);
+function checkElements() {
+  elements = {
+    givenNameInput: document.querySelector('.given-name-item input.el-input__inner'),
+    givenSurnameInput: document.querySelector('.search_hcp_visitor-panel .el-input__inner'),
+    visitedInput: document.querySelector('div[data-v-de849942][data-v-e10c82a2].search-person-panel input.el-input__inner[placeholder="Pesquisar"]'),
+    continueButton: document.querySelector('button[title="Dar entrada e continuar"][data-v-eb02dcfc]'),
+    startButton: document.querySelector('button[title="Entrada"][data-v-eb02dcfc]')
+  };
 
-  if (entradaSpan) {
-    isHandled = true; // Set flag to prevent multiple handling
-    // observer.disconnect(); // Stop observing once we find it
-    console.log('Found page - initializing auto sync handlers');
-    handleEntradaPage();
-  }
-});
-
-// Start observing
-observer.observe(document.body, {
-  childList: true,
-  subtree: true
-});
-
-function handleEntradaPage() {
-  // Watch for the given-name input
-  const givenNameInput = document.querySelector('.given-name-item input.el-input__inner');
-
-  // Watch for the surname input with specific class structure
-  const givenSurnameInput = document.querySelector('.search_hcp_visitor-panel .el-input__inner');
-
-  // Watch for the Visitado (Visited) input with more specific selector
-  const visitedInput = document.querySelector('div[data-v-de849942][data-v-e10c82a2].search-person-panel input.el-input__inner[placeholder="Pesquisar"]');
-
-  // Find phone input by using emails class as reference
+  // Find phone input using emails div as reference
   const emailsDiv = document.querySelector('div[data-v-e10c82a2].el-form-item.emails');
-  let phoneInput = null;
-
   if (emailsDiv && emailsDiv.nextElementSibling) {
-    phoneInput = emailsDiv.nextElementSibling.querySelector('input.el-input__inner');
+    elements.phoneInput = emailsDiv.nextElementSibling.querySelector('input.el-input__inner');
   }
 
-  // Look for both "Entrar e continuar" and "Entrar" buttons
-  const continueButton = document.querySelector('button[title="Dar entrada e continuar"][data-v-eb02dcfc]');
-  const startButton = document.querySelector('button[title="Entrada"][data-v-eb02dcfc]');
-  console.log('continueButton:', continueButton);
-  console.log('startButton:', startButton);
+  // Log element states
+  console.log('Elements found:', Object.entries(elements)
+    .map(([key, value]) => `${key}: ${value ? '✅' : '❌'}`)
+    .join(', '));
 
-  // Disable the startButton if found
-  if (startButton) {
-    startButton.disabled = true;
-    startButton.classList.add('is-disabled');
-    // console.log('Start button disabled');
+  // If continue button is found and click handler not yet added
+  if (elements.continueButton && !elements.continueButton.hasAttribute('data-handler-added')) {
+    console.log('Adding click handler to continue button');
 
-    // Prevent any click events
-    startButton.addEventListener('click', (e) => {
+    elements.continueButton.setAttribute('data-handler-added', 'true');
+
+    elements.continueButton.addEventListener('click', async (e) => {
       e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }, true); // Using capture phase to ensure we catch the event first
-  }
 
-  // If "Entrar e continuar" is found, add event listener
-  if (continueButton) {
-    continueButton.addEventListener('click', async (e) => {
-      e.preventDefault();
+      if (isProcessing) {
+        console.log('Token creation already in progress');
+        return;
+      }
+
+      isProcessing = true;
+      stopChecking();
+      console.log('Timer stopped on button click');
 
       // Get the current values
-      const guestPhone = phoneInput ? phoneInput.value : '';
-      const guestName = givenNameInput ? givenNameInput.value : '';
-      const surname = givenSurnameInput ? givenSurnameInput.value.trim() : '';
-      const residentName = visitedInput ? visitedInput.value : '';
-
-      if (guestName === '') {
-        // console.log('Guest name check:', {guestName, surname});
-        await sendToDiscord(
-          "⚠️ Empty Guest Name Alert via Auto Sync",
-          "Missing Guest Information",
-          "Attempted to create token without guest name",
-          [
-            { name: "Guest Phone", value: guestPhone || "Not provided", inline: true },
-            { name: "Resident Name", value: residentName || "Not provided", inline: true },
-            { name: "Status", value: "❌ No Guest Name Provided", inline: true }
-          ],
-          16776960 // Yellow color for warning
-        );
-        return;
-      }
-
-      if (residentName === '') {
-        //console.log('No resident name found');
-        await sendToDiscord(
-          "⚠️ Empty Resident Alert via Auto Sync",
-          "Missing Resident Information",
-          "Attempted to create token without resident information",
-          [
-            { name: "Guest Name", value: surname ? `${guestName} ${surname}` : guestName || "Not provided", inline: true },
-            { name: "Guest Phone", value: guestPhone || "Not provided", inline: true },
-            { name: "Status", value: "❌ No Resident Selected", inline: true }
-          ],
-          16776960 // Yellow color for warning
-        );
-        return;
-      }
-
-      if (guestPhone === '') {
-        //console.log('No phone number found');
-        await sendToDiscord(
-          "⚠️ Empty Phone Number Alert via Auto Sync",
-          "Missing Phone Number",
-          "Attempted to create token without phone number",
-          [
-            { name: "Guest Name", value: surname ? `${guestName} ${surname}` : guestName || "Not provided", inline: true },
-            { name: "Resident Name", value: residentName || "Not provided", inline: true },
-            { name: "Resident Address", value: residentName ? residentName.match(/\[([A-Z]\d{1,2})/)[1].replace(/([A-Z])(\d+)/, '$1 $2') : "Not provided", inline: true }
-          ],
-          16776960 // Yellow color for warning
-        );
-        return;
-      }
-
-      // Continue with the rest of the code if both phone and resident exist
-      const fullGuestName = surname ? `${guestName} ${surname}` : guestName;
-
-      let residentAddress = "Rua das Alamedas, 369"; // default value
-      const match = residentName.match(/\[([A-Z]\d{1,2})/);
-      if (match) {
-        residentAddress = match[1].replace(/([A-Z])(\d+)/, '$1 $2');
-        // console.log('Extracted address:', residentAddress);
-      }
-      console.log('residentAddress:', residentAddress);
-      if (residentAddress === '') {
-        // alert('❌ Por favor, preencha o endereço do morador!');
-        return;
-      }
-
-      // console.log('Current phone number:', guestPhone);
-      // console.log('Current guest name:', fullGuestName);
-      // console.log('Resident address:', residentAddress);
+      const guestPhone = elements.phoneInput ? elements.phoneInput.value : '';
+      const guestName = elements.givenNameInput ? elements.givenNameInput.value : '';
+      const surname = elements.givenSurnameInput ? elements.givenSurnameInput.value.trim() : '';
+      const residentName = elements.visitedInput ? elements.visitedInput.value : '';
 
       try {
+        console.log('Form values:', { guestPhone, guestName, surname, residentName });
+
+        if (guestName === '') {
+          console.log('Empty guest name detected, sending webhook');
+          await sendToDiscord(
+            "⚠️ Empty Guest Name Alert via Auto Sync",
+            "Missing Guest Information",
+            "Attempted to create token without guest name",
+            [
+              { name: "Guest Phone", value: guestPhone || "Not provided", inline: true },
+              { name: "Resident Name", value: residentName || "Not provided", inline: true },
+              { name: "Status", value: "❌ No Guest Name Provided", inline: true }
+            ],
+            16776960 // Yellow color for warning
+          );
+        }
+
+        if (residentName === '') {
+          console.log('Empty resident name detected, sending webhook');
+          await sendToDiscord(
+            "⚠️ Empty Resident Alert via Auto Sync",
+            "Missing Resident Information",
+            "Attempted to create token without resident information",
+            [
+              { name: "Guest Name", value: surname ? `${guestName} ${surname}` : guestName || "Not provided", inline: true },
+              { name: "Guest Phone", value: guestPhone || "Not provided", inline: true },
+              { name: "Status", value: "❌ No Resident Selected", inline: true }
+            ],
+            16776960 // Yellow color for warning
+          );
+        }
+
+        if (guestPhone === '') {
+          console.log('Empty phone detected, sending webhook');
+          await sendToDiscord(
+            "⚠️ Empty Phone Number Alert via Auto Sync",
+            "Missing Phone Number",
+            "Attempted to create token without phone number",
+            [
+              { name: "Guest Name", value: surname ? `${guestName} ${surname}` : guestName || "Not provided", inline: true },
+              { name: "Resident Name", value: residentName || "Not provided", inline: true },
+              { name: "Resident Address", value: residentName ? residentName.match(/\[([A-Z]\d{1,2})/)[1].replace(/([A-Z])(\d+)/, '$1 $2') : "Not provided", inline: true }
+            ],
+            16776960 // Yellow color for warning
+          );
+        }
+
+        // Continue with the rest of the code if both phone and resident exist
+        const fullGuestName = surname ? `${guestName} ${surname}` : guestName;
+
+        let residentAddress = ""; // default value
+        const match = residentName.match(/\[([A-Z]\d{1,2})/);
+        if (match) {
+          residentAddress = match[1].replace(/([A-Z])(\d+)/, '$1 $2');
+          // console.log('Extracted address:', residentAddress);
+        }
+
+        // console.log('Current phone number:', guestPhone);
+        // console.log('Current guest name:', fullGuestName);
+        // console.log('Resident address:', residentAddress);
+
         const createToken = await fetch(API_URL + 'create-token', {
           method: 'POST',
           headers: {
@@ -196,19 +179,17 @@ function handleEntradaPage() {
           })
         });
 
-        const visitResult = await createToken.json();
-        console.log('Visit created:', visitResult);
-
         if (createToken.ok) {
-          // Clear phone input value on success
-          if (phoneInput) {
-            phoneInput.value = '';
-            console.log('Phone input cleared');
-          }
+          const visitResult = await createToken.json();
+          console.log('Visit created:', visitResult);
 
-          // Success webhook and confirmation
-          alert('✅ Token created successfully! Click OK to refresh the page.');
+          // Clear form values
+          if (elements.phoneInput) elements.phoneInput.value = '';
+          if (elements.givenNameInput) elements.givenNameInput.value = '';
+          if (elements.givenSurnameInput) elements.givenSurnameInput.value = '';
+          if (elements.visitedInput) elements.visitedInput.value = '';
 
+          // alert('✅ Token created successfully!');
           await sendToDiscord(
             "✅ Token Created Successfully via Auto Sync",
             "New Token Details",
@@ -222,11 +203,27 @@ function handleEntradaPage() {
             ],
             5763719 // Green color for success
           );
+
+          // Reset processing state
+          isProcessing = false;
+
+          // Restart timer after success
+          startChecking();
+          console.log('Timer restarted after success');
         } else {
           throw new Error(`HTTP error! status: ${createToken.status}`);
         }
       } catch (error) {
-        console.error('Error sending token to API:', error);
+        // Continue with the rest of the code if both phone and resident exist
+        const fullName = surname ? `${guestName} ${surname}` : guestName;
+        let address = ""; // default value
+        const match = residentName.match(/\[([A-Z]\d{1,2})/);
+        if (match) {
+          address = match[1].replace(/([A-Z])(\d+)/, '$1 $2');
+          // console.log('Extracted address:', address);
+        }
+        console.error('Error:', error);
+
         // Error webhook
         await sendToDiscord(
           "❌ Error creating token via Auto Sync",
@@ -236,66 +233,45 @@ function handleEntradaPage() {
             { name: "Error Message", value: error.message || "Unknown error", inline: false },
             {
               name: "Request Data", value: "```json\n" + JSON.stringify({
-                guest_display_name: fullGuestName,
+                guest_display_name: fullName,
                 guest_phone_number: guestPhone,
                 resident_display_name: residentName,
-                resident_address: residentAddress
+                resident_address: address
               }, null, 2) + "\n```",
               inline: false
             },
-            { name: "Guest Name", value: fullGuestName || "Not provided", inline: true },
+            { name: "Guest Name", value: fullName || "Not provided", inline: true },
             { name: "Guest Phone", value: guestPhone || "Not provided", inline: true },
             { name: "Resident Name", value: residentName || "Not provided", inline: true },
-            { name: "Resident Address", value: residentAddress || "Not provided", inline: true }
+            { name: "Resident Address", value: address || "Not provided", inline: true }
           ],
           15158332 // Red color
         );
+
+        isProcessing = false;
+        startChecking();
+        console.log('Timer restarted after error');
       }
     });
-  } else {
-    // try {
-    //   console.log('Observer reconnected after connection failure');
-    //   if (entradaSpan && !isHandled) {
-    //     sendToDiscord(
-    //       "🔌 Auto Sync Connection Alert",
-    //       "Connection Status Check",
-    //       "Unable to establish connection with the HikCentral",
-    //       [
-    //         { name: "Status", value: "❌ Button Not Found", inline: true },
-    //         { name: "Element Selector", value: "`button[title='Dar entrada e continuar'][data-v-eb02dcfc]`", inline: true },
-    //         { name: "Page Check", value: document.querySelector('span[data-v-27ffe136][title="Entrada"]') ? "✅ On Entrada Page" : "❌ Not on Entrada Page", inline: true },
-    //         { name: "DOM Ready", value: document.readyState, inline: true },
-    //         { name: "Version", value: "v1.0.0", inline: true },
-    //       ],
-    //       3447003 // Blue color for info
-    //     );
-    //     console.log('Connection status sent to Sentinel');
-
-    //     // Show alert to user
-    //     alert('❌ Por favor, atualize a página!');
-    //   }
-    // } catch (webhookError) {
-    //   console.error('Failed to send connection status to Sentinel:', webhookError);
-    // }
   }
 }
 
-// Add devtools text at the top of the body
-const bigText = document.createElement('h1');
-bigText.textContent = 'DevTools LGI-0001, Safe Tag Auto Sync';
-bigText.style.fontSize = '24px';
-bigText.style.fontWeight = 'bold';
-bigText.style.textAlign = 'center';
-bigText.style.padding = '20px';
-bigText.style.backgroundColor = '#f0f0f0';
-bigText.style.margin = '0';
+function startChecking() {
+  if (checkTimer) {
+    clearInterval(checkTimer);
+  }
 
-// Make sure body exists before inserting
-if (document.body) {
-  document.body.insertBefore(bigText, document.body.firstChild);
-  // handleEntradaPage();
-  console.log('Body found - initializing auto sync handlers');
-} else {
-  console.log('Body not found - waiting for DOM content loaded');
-  // document.addEventListener('DOMContentLoaded', handleEntradaPage);
+  checkTimer = setInterval(checkElements, 2000);
+  console.log('Element check timer started');
 }
+
+function stopChecking() {
+  if (checkTimer) {
+    clearInterval(checkTimer);
+    checkTimer = null;
+    console.log('Element check timer stopped');
+  }
+}
+
+// Start initial check
+startChecking();
